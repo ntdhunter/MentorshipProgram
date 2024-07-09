@@ -95,8 +95,8 @@ GROUP BY runner_id;
 
 SELECT p.pizza_name,
        COUNT(c.pizza_id) AS delivered_pizza_count
-FROM #customer_orders AS c
-JOIN #runner_orders AS r ON c.order_id = r.order_id
+FROM customer_orders_temp AS c
+JOIN runner_orders_temp AS r ON c.order_id = r.order_id
 JOIN pizza_names AS p ON c.pizza_id = p.pizza_id
 WHERE r.distance != 0
 GROUP BY p.pizza_name;
