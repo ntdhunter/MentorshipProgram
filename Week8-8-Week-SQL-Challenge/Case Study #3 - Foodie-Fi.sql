@@ -173,6 +173,8 @@ JOIN annual_plan a ON t.customer_id = a.customer_id;
 -- trial_plan CTE: Filter results to include only the customers subscribed to the trial plan.
 -- annual_plan CTE: Filter results to only include the customers subscribed to the pro annual plan.
 -- bins CTE: Put customers in 30-day buckets based on the average number of days taken to upgrade to a pro annual plan.
+-- The width_bucket function in PostgreSQL is used to categorize a continuous range of values into a specified number of equal-width buckets. 
+-- It is commonly used for histograms and frequency distribution analysis.
 WITH trial_plan AS
   (SELECT customer_id,
           start_date AS trial_date
