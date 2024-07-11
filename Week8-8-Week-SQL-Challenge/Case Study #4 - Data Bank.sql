@@ -2,14 +2,14 @@
 -- 1. How many unique nodes are there on the Data Bank system?
 -- Answer:
 SELECT
-	COUNT(DISTINCT node_id) unique_node_counts
+	COUNT(DISTINCT node_id) unique_nodes
 FROM data_bank.customer_nodes;
 -- 2. What is the number of nodes per region?
 -- Answer:
 SELECT
 	r.region_id,
     r.region_name,
-	COUNT(DISTINCT node_id) unique_node_counts
+	COUNT(DISTINCT node_id) node_counts
 FROM data_bank.customer_nodes cn
 JOIN data_bank.regions r ON cn.region_id = r.region_id
 GROUP BY r.region_id, r.region_name;
@@ -89,39 +89,30 @@ GROUP BY region_id;
 -- Answer:
 SELECT
 	txn_type,
-    COUNT(txn_type),
-    SUM(txn_amount)
+    COUNT(txn_type) transaction_count,
+    SUM(txn_amount) total_amount
 FROM data_bank.customer_transactions
 GROUP BY txn_type;
 -- 2. What is the average total historical deposit counts and amounts for all customers?
 -- Answer:
-WITH trans_customer AS (
-SELECT
-	customer_id,
-    SUM(CASE
-       		WHEN txn_type = 'deposit' THEN txn_amount
-       ELSE 0
-       END) deposit_amount,
-    SUM(CASE
-       		WHEN txn_type = 'withdrawal' THEN txn_amount
-       ELSE 0
-       END) withdrawal_amount,
-		SUM(CASE
-       		WHEN txn_type = 'withdrawal' THEN txn_amount
-       ELSE 0
-       END) purchase_amount
-FROM data_bank.customer_transactions
-GROUP BY customer_id
+WITH deposits AS (
+  SELECT 
+    customer_id, 
+    COUNT(customer_id) AS txn_count, 
+    AVG(txn_amount) AS avg_amount
+  FROM data_bank.customer_transactions
+  WHERE txn_type = 'deposit'
+  GROUP BY customer_id
 )
 
-SELECT
-	AVG(deposit_amount) avg_total_deposit,
-    AVG(deposit_amount) - AVG(withdrawal_amount) - AVG(purchase_amount) avg_total_amount
-FROM trans_customer;
+SELECT 
+  ROUND(AVG(txn_count)) AS avg_deposit_count, 
+  ROUND(AVG(avg_amount)) AS avg_deposit_amt
+FROM deposits;
 -- 3. For each month - how many Data bank customers make more than 1 deposit and either 1 purchase or 1 withdrawal in a single month?
 -- Answer:
 -- Step 1: For each month, customers make ? deposit transactions, ? withdrawal transactions and ? purchase transactions
-WITH trans_monthly AS (
+WITH monthly_transactions AS (
 SELECT
 	DATE_PART('month', txn_date) month_date,
     customer_id,
@@ -140,22 +131,261 @@ ORDER BY month_date, customer_id
 )
 SELECT
 	month_date,
-    SUM(CASE
-       WHEN deposit_count > 1 AND purchase_count > 1 THEN 1
-       ELSE 0
-       END) purchase_cus
-       ,
-       SUM(CASE
-          WHEN withdrawal_count > 1 THEN 1
-          ELSE 0
-          END) withdrawal_cus
-FROM trans_monthly
-GROUP BY month_date;
+  COUNT(DISTINCT customer_id) customer_count
+FROM monthly_transactions
+WHERE deposit_count < 1 AND (withdrawal_count > 1 OR purchase_count > 1)
+GROUP BY month_date
+ORDER BY month_date;
+-- OR
+WITH monthly_transactions AS (
+  SELECT 
+    customer_id, 
+    DATE_PART('month', txn_date) AS mth,
+    SUM(CASE WHEN txn_type = 'deposit' THEN 0 ELSE 1 END) AS deposit_count,
+    SUM(CASE WHEN txn_type = 'purchase' THEN 0 ELSE 1 END) AS purchase_count,
+    SUM(CASE WHEN txn_type = 'withdrawal' THEN 1 ELSE 0 END) AS withdrawal_count
+  FROM data_bank.customer_transactions
+  GROUP BY customer_id, DATE_PART('month', txn_date)
+)
+
+SELECT
+  mth,
+  COUNT(DISTINCT customer_id) AS customer_count
+FROM monthly_transactions
+WHERE deposit_count > 1 
+  AND (purchase_count >= 1 OR withdrawal_count >= 1)
+GROUP BY mth
+ORDER BY mth;
 -- 4. What is the closing balance for each customer at the the end of the month? Also show the change in balance each month in the same table output?
 -- Answer:
+-- CTE 1 - To identify transaction amount as an inflow (+) or outflow (-)
+WITH monthly_balances_cte AS (
+  SELECT 
+    customer_id, 
+    (DATE_TRUNC('month', txn_date) + INTERVAL '1 MONTH - 1 DAY') AS closing_month, 
+    SUM(CASE 
+      WHEN txn_type = 'withdrawal' OR txn_type = 'purchase' THEN -txn_amount
+      ELSE txn_amount END) AS transaction_balance
+  FROM data_bank.customer_transactions
+  GROUP BY 
+    customer_id, txn_date 
+)
+
+-- CTE 2 - Use GENERATE_SERIES() to generate as a series of last day of the month for each customer.
+, monthend_series_cte AS (
+  SELECT
+    DISTINCT customer_id,
+    ('2020-01-31'::DATE + GENERATE_SERIES(0,3) * INTERVAL '1 MONTH') AS ending_month
+  FROM data_bank.customer_transactions
+)
+
+-- CTE 3 - Calculate total monthly change and ending balance for each month using window function SUM()
+, monthly_changes_cte AS (
+  SELECT 
+    monthend_series_cte.customer_id, 
+    monthend_series_cte.ending_month,
+    SUM(monthly_balances_cte.transaction_balance) OVER (
+      PARTITION BY monthend_series_cte.customer_id, monthend_series_cte.ending_month
+      ORDER BY monthend_series_cte.ending_month
+    ) AS total_monthly_change,
+    SUM(monthly_balances_cte.transaction_balance) OVER (
+      PARTITION BY monthend_series_cte.customer_id 
+      ORDER BY monthend_series_cte.ending_month
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS ending_balance
+  FROM monthend_series_cte
+  LEFT JOIN monthly_balances_cte
+    ON monthend_series_cte.ending_month = monthly_balances_cte.closing_month
+    AND monthend_series_cte.customer_id = monthly_balances_cte.customer_id
+)
+
+-- Final query: Display the output of customer monthly statement with the ending balances. 
+SELECT 
+customer_id, 
+  ending_month, 
+  COALESCE(total_monthly_change, 0) AS total_monthly_change, 
+  MIN(ending_balance) AS ending_balance
+ FROM monthly_changes_cte
+ GROUP BY 
+  customer_id, ending_month, total_monthly_change
+ ORDER BY 
+  customer_id, ending_month;
 -- 5. Comparing the closing balances of a customer's first month and the closing balance from their second nth, what percentage of customers:
+-- Temp table #1: Create a temp table using Question 4 solution
+CREATE TEMP TABLE customer_monthly_balances AS (
+  WITH monthly_balances_cte AS (
+  SELECT 
+    customer_id, 
+    (DATE_TRUNC('month', txn_date) + INTERVAL '1 MONTH - 1 DAY') AS closing_month, 
+    SUM(CASE 
+      WHEN txn_type = 'withdrawal' OR txn_type = 'purchase' THEN -txn_amount
+      ELSE txn_amount END) AS transaction_balance
+  FROM data_bank.customer_transactions
+  GROUP BY 
+    customer_id, txn_date 
+), monthend_series_cte AS (
+  SELECT
+    DISTINCT customer_id,
+    ('2020-01-31'::DATE + GENERATE_SERIES(0,3) * INTERVAL '1 MONTH') AS ending_month
+  FROM data_bank.customer_transactions
+), monthly_changes_cte AS (
+  SELECT 
+    monthend_series_cte.customer_id, 
+    monthend_series_cte.ending_month,
+    SUM(monthly_balances_cte.transaction_balance) OVER (
+      PARTITION BY monthend_series_cte.customer_id, monthend_series_cte.ending_month
+      ORDER BY monthend_series_cte.ending_month
+    ) AS total_monthly_change,
+    SUM(monthly_balances_cte.transaction_balance) OVER (
+      PARTITION BY monthend_series_cte.customer_id 
+      ORDER BY monthend_series_cte.ending_month
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS ending_balance
+  FROM monthend_series_cte
+  LEFT JOIN monthly_balances_cte
+    ON monthend_series_cte.ending_month = monthly_balances_cte.closing_month
+    AND monthend_series_cte.customer_id = monthly_balances_cte.customer_id 
+)
+
+SELECT 
+  customer_id, 
+  ending_month, 
+  COALESCE(total_monthly_change, 0) AS total_monthly_change, 
+  MIN(ending_balance) AS ending_balance
+FROM monthly_changes_cte
+GROUP BY 
+  customer_id, ending_month, total_monthly_change
+ORDER BY 
+  customer_id, ending_month
+);
+
+-- Temp table #2: Create a temp table using temp table #1 `customer_monthly_balances`
+CREATE TEMP TABLE ranked_monthly_balances AS (
+  SELECT 
+    customer_id, 
+    ending_month, 
+    ending_balance,
+    ROW_NUMBER() OVER (
+      PARTITION BY customer_id 
+      ORDER BY ending_month) AS ranked_row
+  FROM customer_monthly_balances
+);
 -- - What percentage of customers have a negative first month balance? What percentage of customers have a positive first month balance?
+-- Answer:
+-- Method 1
+SELECT 
+  ROUND(100.0 * 
+    SUM(CASE 
+      WHEN ending_balance::TEXT LIKE '-%' THEN 1 ELSE 0 END)
+    /(SELECT COUNT(DISTINCT customer_id) 
+    FROM customer_monthly_balances),1) AS negative_first_month_percentage,
+  ROUND(100.0 * 
+    SUM(CASE 
+      WHEN ending_balance::TEXT NOT LIKE '-%' THEN 1 ELSE 0 END)
+    /(SELECT COUNT(DISTINCT customer_id) 
+    FROM customer_monthly_balances),1) AS positive_first_month_percentage
+FROM ranked_monthly_balances
+WHERE ranked_row = 1;
+-- OR
+-- Method 2
+SELECT 
+  ROUND(100.0 * 
+    COUNT(customer_id)
+    /(SELECT COUNT(DISTINCT customer_id) 
+    FROM customer_monthly_balances),1) AS negative_first_month_percentage,
+  100 - ROUND(100.0 * COUNT(customer_id)
+    /(SELECT COUNT(DISTINCT customer_id) 
+    FROM customer_monthly_balances),1) AS positive_first_month_percentage
+FROM ranked_monthly_balances
+WHERE ranked_row = 1
+  AND ending_balance::TEXT LIKE '-%';
 -- - What percentage of customers increase their opening month's positive closing balance by more than 5% in the following month?
+-- Answer:
+WITH following_month_cte AS (
+  SELECT
+    customer_id, 
+    ending_month, 
+    ending_balance, 
+    LEAD(ending_balance) OVER (
+      PARTITION BY customer_id 
+      ORDER BY ending_month) AS following_balance
+  FROM ranked_monthly_balances
+)
+, variance_cte AS (
+  SELECT 
+    customer_id, 
+    ending_month, 
+    ROUND(100.0 * 
+      (following_balance - ending_balance) / ending_balance,1) AS variance
+  FROM following_month_cte  
+  WHERE ending_month = '2020-01-31'
+    AND following_balance::TEXT NOT LIKE '-%'
+  GROUP BY 
+    customer_id, ending_month, ending_balance, following_balance
+  HAVING ROUND(100.0 * (following_balance - ending_balance) / ending_balance,1) > 5.0
+)
+
+SELECT 
+  ROUND(100.0 * 
+    COUNT(customer_id)
+    / (SELECT COUNT(DISTINCT customer_id) 
+    FROM ranked_monthly_balances),1) AS increase_5_percentage
+FROM variance_cte; 
 -- - What percentage of customers reduce their opening month’s positive closing balance by more than 5% in the following month?
+-- Answer:
+WITH following_month_cte AS (
+  SELECT
+    customer_id, 
+    ending_month, 
+    ending_balance, 
+    LEAD(ending_balance) OVER (
+      PARTITION BY customer_id 
+      ORDER BY ending_month) AS following_balance
+  FROM ranked_monthly_balances
+)
+, variance_cte AS (
+  SELECT 
+    customer_id, 
+    ending_month, 
+    ROUND((100.0 * 
+      following_balance - ending_balance) / ending_balance,1) AS variance
+  FROM following_month_cte  
+  WHERE ending_month = '2020-01-31'
+    AND following_balance::TEXT NOT LIKE '-%'
+  GROUP BY 
+    customer_id, ending_month, ending_balance, following_balance
+  HAVING ROUND((100.0 * (following_balance - ending_balance)) / ending_balance,2) < 5.0
+)
+
+SELECT 
+  ROUND(100.0 * 
+    COUNT(customer_id)
+    / (SELECT COUNT(DISTINCT customer_id) 
+    FROM ranked_monthly_balances),1) AS reduce_5_percentage
+FROM variance_cte; 
 -- - What percentage of customers move from a positive balance in the first month to a negative balance in the second month?
 -- Answer:
+WITH following_month_cte AS (
+  SELECT
+    customer_id, 
+    ending_month, 
+    ending_balance, 
+    LEAD(ending_balance) OVER (
+      PARTITION BY customer_id 
+      ORDER BY ending_month) AS following_balance
+  FROM ranked_monthly_balances
+)
+, variance_cte AS (
+  SELECT *
+  FROM following_month_cte
+  WHERE ending_month = '2020-01-31'
+    AND ending_balance::TEXT NOT LIKE '-%'
+    AND following_balance::TEXT LIKE '-%'
+)
+
+SELECT 
+  ROUND(100.0 * 
+    COUNT(customer_id) 
+    / (SELECT COUNT(DISTINCT customer_id) 
+    FROM ranked_monthly_balances),1) AS positive_to_negative_percentage
+FROM variance_cte;
