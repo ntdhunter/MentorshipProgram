@@ -1,0 +1,72 @@
+The customers table has 15 columns:
+	customer_id stores the ID of the customer.
+	email stores the customer’s email address.
+	full_name stores the customer’s full name.
+	address stores the customer’s street and house number.
+	city stores the city where the customer lives.
+	region stores the customer’s region (not always applicable).
+	postal_code stores the customer’s ZIP/postcode.
+	country stores the customer’s country.
+	phone stores the customer’s phone number.
+	registration_date stores the date on which the customer registered.
+	channel_id stores the ID of the channel through which the customer found the shop.
+	first_order_id stores the ID of the first order made by the customer.
+	first_order_date stores the date of the customer’s first order.
+	last_order_id stores the ID of the customer’s last (i.e. most recent) order.
+	last_order_date stores the date of the customer’s last order.
+
+The orders table has the following columns:
+	order_id stores the ID of the order.
+	customer_id stores the ID of the customer who placed the order.
+	order_date stores the date when the order was placed.
+	total_amount stores the total amount paid for the order.
+	ship_name stores the name of the person to whom the order was sent.
+	ship_address stores the address (house number and street) where the order was sent.
+	ship_city stores the city where the order was sent.
+	ship_region stores the region in which the city is located.
+	ship_postalcode stores the destination postcode.
+	ship_country stores the destination country.
+	shipped_date stores the date when the order was shipped.
+	
+The products table has the following columns:
+	product_id stores the ID of the product.
+	product_name stores the name of the product.
+	category_id stores the category to which the product belongs.
+	unit_price stores the price for one unit of the product (e.g. per bottle, pack, etc.).
+	discontinued indicates that the product is no longer sold.
+
+The categories table has the following columns:
+	category_id stores the ID of the category.
+	category_name stores the name of the category.
+	description stores a short description of the category.
+
+The order_items table has the following columns:
+	order_id stores the ID of the order in which the product was bought.
+	product_id stores the ID of the product purchased in the order.
+	unit_price stores the per-unit price of the product. (Note that this can be different from the price in the product’s category; the price can change over time and discounts can be applied.)
+	quantity stores the number of units bought in the order.
+	discount stores the discount applied to the given product.
+	
+The channels table has the following columns:
+	id stores the ID of the channel.
+	channel_name stores the name of the channel through which the customer found the shop.
+
+
+1. Create the tables
+
+2. List the Top 3 Most Expensive Orders
+
+3. Compute Deltas Between Consecutive Orders
+	In this exercise, we're going to compute the difference between two consecutive orders from the same customer. Show the ID of the order (order_id), the ID 
+	of the customer (customer_id), the total_amount of the order, the total_amount of the previous order based on the order_date (name the column previous_value), 
+	and the difference between the total_amount of the current order and the previous order (name the column delta).
+
+4. Compute the Running Total of Purchases per Customer
+	For each customer and their orders, show the following:
+	customer_id – the ID of the customer.
+	full_name – the full name of the customer.
+	order_id – the ID of the order.
+	order_date – the date of the order.
+	total_amount – the total spent on this order.
+	running_total – the running total spent by the given customer.
+	

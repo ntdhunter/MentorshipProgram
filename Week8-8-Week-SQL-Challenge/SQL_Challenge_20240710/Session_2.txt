@@ -1,0 +1,30 @@
+The runner table contains the following columns:
+	id stores the unique ID of the runner.
+	name stores the runner's name.
+	main_distance stores the distance (in meters) that the runner runs during events.
+	age stores the runner's age.
+	is_female indicates if the runner is male or female.
+
+The event table contains the following columns:
+	id stores the unique ID of the event.
+	name stores the name of the event (e.g. London Marathon, Warsaw Runs, or New Year Run).
+	start_date stores the date of the event.
+	city stores the city where the event takes place.
+	
+The runner_event table contains the following columns:
+	runner_id stores the ID of the runner.
+	event_id stores the ID of the event.
+
+
+1. Create tables 
+
+2. Organize Runners Into Groups
+Select the main distance and the number of runners that run the given distance (runners_number). Display only those rows where the number of runners is greater than 3.
+
+3.How Many Runners Participate in Each Event
+Display the event name and the number of club members that take part in this event (call this column runner_count). Note that there may be events in which no club 
+members participate. For these events, the runner_count should equal 0.
+
+4.Group Runners by Main Distance and Age
+Display the distance and the number of runners for the following age categories: under 20, 20–29, 30–39, 40–49, and over 50. 
+Use the following column aliases: under_20, age_20_29, age_30_39, age_40_49, and over_50.
